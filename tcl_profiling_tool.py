@@ -186,7 +186,10 @@ def raw_profile(dir_name, cpu_infos):
         (topic, data, t) = reader.read_next()
         msg_type = get_message(type_map[topic])
         msg = deserialize_message(data, msg_type)
-        task_nm = msg.timing_header[0].task_name
+        if len(msg.timing_header) != 0:
+            task_nm = msg.timing_header[0].task_name
+        else:
+            continue
         if task_result.get(task_nm) == None:
             task_result[task_nm] = list()
         task_result[task_nm].append(msg) #태스크 단위로 profile_data 저장
@@ -342,7 +345,8 @@ def process_execution_time_task_to_task(task_cpu_infos, profile_data, sub_paths,
                     if yeah:
                         break
                 if elapse_ceil < 0:
-                    print(elapse)
+                    print('--------------------------------------------------------------------------------------')
+                    print("ELAPSE IS NEGATIVE!!!!!!!!!!  " << elapse)
                     print(profile[i][0],profile[i][1])
                     print(profile[pi][0], profile[pi][1])
             # if pidx != 0 :
@@ -392,7 +396,7 @@ def process_response_time(profile_data):
             #     print(data[0])
             if response_time_result.get(task_name) == None:
                 response_time_result[task_name] = list()
-            if(elapse_ceil >= 100 and task_name.find("concate") != -1):
+            if(elapse_ceil >= 500 and (task_name.find("planner") != -1 or task_name.find("smoother")) ):
                 print(data[0])
                 for th in data[0]:
                     for minfo in th.msg_infos:
@@ -589,18 +593,31 @@ def main(args):
     # 태스크 - 코어 할당 정보
 
 
-    cpu0 = ['virtual_rear_lidar_driver', 'concatenate_filter', 'crop_box_filter', 'lidar_centerpoint']
-    cpu1 = ['virtual_front_lidar_driver', 'voxel_grid_downsample_filter', 'ndt_scan_matcher']
-    cpu2 = ['virtual_camera_driver', 'image_transport_decompressor'] 
-    cpu3 = ['tensorrt_yolo', 'roi_detected_object_fusion','multi_object_tracker', 'map_based_prediction']
-    cpu4 = ['virtual_can_driver','vehicle_velocity_converter']
-    cpu5 = ['ekf_localizer_ndt', 'stop_filter']
-    cpu6 = ['behavior_path_planner','behavior_velocity_planner']
-    cpu7 = ['obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother']
+    # cpu0 = ['virtual_rear_lidar_driver', 'concatenate_filter', 'crop_box_filter', 'lidar_centerpoint']
+    # # cpu1 = ['lidar_centerpoint']
+    # cpu1 = ['virtual_front_lidar_driver', 'voxel_grid_downsample_filter', 'ndt_scan_matcher']
+    # cpu2 = ['virtual_camera_driver', 'image_transport_decompressor'] 
+    # cpu3 = ['tensorrt_yolo', 'roi_detected_object_fusion','multi_object_tracker', 'map_based_prediction']
+    # cpu4 = ['virtual_can_driver','vehicle_velocity_converter']
+    # cpu5 = ['ekf_localizer_ndt', 'stop_filter']
+    # cpu6= ['behavior_path_planner','behavior_velocity_planner']
+    # cpu7 = ['obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother']
 
-    task_cpu_infos = [cpu0, cpu1, cpu2, cpu3, cpu4,cpu5, cpu6, cpu7]
-    # task_cpu_infos = [cpu6, cpu7]
-    # task_cpu_infos = [cpu4,cpu5]
+    # task_cpu_infos = [cpu0, cpu1, cpu2, cpu3, cpu4, cpu5, cpu6, cpu7]
+    cpu0 = ['virtual_rear_lidar_driver', 'concatenate_filter', 'crop_box_filter']
+    cpu1 = ['lidar_centerpoint']
+    cpu2 = ['virtual_front_lidar_driver', 'voxel_grid_downsample_filter', 'ndt_scan_matcher']
+    cpu3 = ['virtual_camera_driver', 'image_transport_decompressor'] 
+    cpu4 = ['tensorrt_yolo']
+    cpu5 = ['roi_detected_object_fusion','multi_object_tracker', 'map_based_prediction']
+    cpu6 = ['virtual_can_driver','vehicle_velocity_converter']
+    cpu7 = ['ekf_localizer_ndt', 'stop_filter']
+    cpu8 = ['behavior_path_planner']
+    cpu9 = ['behavior_velocity_planner']
+    cpu10 = ['obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother']
+
+    task_cpu_infos = [cpu0, cpu1, cpu2, cpu3, cpu4, cpu5, cpu6, cpu7, cpu8, cpu9, cpu10]
+
     execution_time_data = None
     response_time_data = None
     e2e_latency_data = None
