@@ -1,0 +1,126 @@
+[INFO] [1688462778.974028861] [rosbag2_storage]: Opened database '/root/shared_dir/rosbag/profile/rosbag2_2023_07_04-02_28_22/rosbag2_2023_07_04-02_28_22_0.db3' for READ_ONLY.
+End read rosbag
+----------------------------------------------------------------------------------------------------------------------------
+     virtual_rear_lidar_driver drop count :      0 /   5499
+            concatenate_filter drop count :     37 /   5526
+    virtual_front_lidar_driver drop count :     10 /   5499
+  voxel_grid_downsample_filter drop count :      0 /   5489
+         virtual_camera_driver drop count :      0 /  11051
+    roi_detected_object_fusion drop count :      0 /  11018
+          multi_object_tracker drop count :     34 /  11052
+            virtual_can_driver drop count :    271 /  55264
+             ekf_localizer_ndt drop count :      9 /  54986
+virtual_rear_lidar_driver
+execution  time: (  1 /   2 /  16)
+response   time: (  1 /   1 /   3)
+---------------------------------------------------------------------
+concatenate_filter
+execution  time: (  1 /   2 /  16)
+response   time: (  2 /   3 /  17)
+---------------------------------------------------------------------
+crop_box_filter
+execution  time: (  1 /   1 /   1)
+response   time: (  3 /   4 /  18)
+---------------------------------------------------------------------
+lidar_centerpoint
+execution  time: ( 27 /  41 /  58)
+response   time: ( 33 /  45 /  64)
+---------------------------------------------------------------------
+virtual_front_lidar_driver
+execution  time: (  1 /   2 /   5)
+response   time: (  1 /   1 /   4)
+---------------------------------------------------------------------
+voxel_grid_downsample_filter
+execution  time: (  1 /   2 /   4)
+response   time: (  2 /   3 /   6)
+---------------------------------------------------------------------
+ndt_scan_matcher
+execution  time: (  7 /  14 /  20)
+response   time: (  9 /  17 /  24)
+---------------------------------------------------------------------
+virtual_camera_driver
+execution  time: (  2 /   2 /  18)
+response   time: (  1 /   2 /  11)
+---------------------------------------------------------------------
+image_transport_decompressor
+execution  time: ( 14 /  17 /  45)
+response   time: ( 15 /  19 /  54)
+---------------------------------------------------------------------
+tensorrt_yolo
+execution  time: ( 24 /  24 / 104)
+response   time: ( 39 /  43 / 128)
+---------------------------------------------------------------------
+roi_detected_object_fusion
+execution  time: (  1 /   1 /   4)
+response   time: ( 20 /  44 / 129)
+---------------------------------------------------------------------
+multi_object_tracker
+execution  time: (  1 /   2 /   7)
+response   time: ( 21 /  45 / 130)
+---------------------------------------------------------------------
+map_based_prediction
+execution  time: (  1 /   2 /  35)
+response   time: ( 10 /  47 / 137)
+---------------------------------------------------------------------
+virtual_can_driver
+execution  time: (  1 /   1 /  11)
+response   time: (  1 /   1 /  11)
+---------------------------------------------------------------------
+vehicle_velocity_converter
+execution  time: (  1 /   1 /   2)
+response   time: (  1 /   2 /  11)
+---------------------------------------------------------------------
+ekf_localizer_ndt
+execution  time: (  1 /   2 /  15)
+response   time: (  2 /   3 /  21)
+---------------------------------------------------------------------
+stop_filter
+execution  time: (  1 /   1 /  11)
+response   time: (  3 /   4 /  22)
+---------------------------------------------------------------------
+behavior_path_planner
+execution  time: (  6 /   8 /  12)
+response   time: (  6 /   8 /  12)
+---------------------------------------------------------------------
+behavior_velocity_planner
+execution  time: ( 10 /  39 /  97)
+response   time: ( 18 /  47 / 108)
+---------------------------------------------------------------------
+obstacle_avoidance_planner
+execution  time: (  4 /   8 /  80)
+response   time: (  6 /  55 / 164)
+---------------------------------------------------------------------
+obstacle_cruise_planner
+execution  time: (  2 /   3 /   8)
+response   time: (  3 /  57 / 166)
+---------------------------------------------------------------------
+motion_velocity_smoother
+execution  time: (  1 /  31 /  64)
+response   time: ( 15 /  86 / 190)
+---------------------------------------------------------------------
+          STF2BPP net latency            : (  5 /   7 /   8)
+---------------------------------------------------------------------
+          LCP2ROF net latency            : (  1 /  34 /  54)
+---------------------------------------------------------------------
+          CAM_DET e2e latency            : ( 85 / 139 / 271)
+---------------------------------------------------------------------
+          FLD_DET e2e latency            : (135 / 189 / 372)
+---------------------------------------------------------------------
+          RLD_DET e2e latency            : (135 / 189 / 372)
+---------------------------------------------------------------------
+          FLD_LOC e2e latency            : (135 / 187 / 306)
+---------------------------------------------------------------------
+          ODM_LOC e2e latency            : ( 45 /  98 / 216)
+---------------------------------------------------------------------
+        SUB_CAM_DET e2e latency          : ( 40 /  46 / 136)
+---------------------------------------------------------------------
+        SUB_FLD_DET e2e latency          : ( 32 /  44 /  63)
+---------------------------------------------------------------------
+        SUB_RLD_DET e2e latency          : ( 32 /  44 /  63)
+---------------------------------------------------------------------
+        SUB_FLD_LOC e2e latency          : (  8 /  16 /  23)
+---------------------------------------------------------------------
+        SUB_ODM_LOC e2e latency          : (  2 /   3 /  15)
+---------------------------------------------------------------------
+        SUB_PLANNING e2e latency         : ( 45 /  98 / 216)
+---------------------------------------------------------------------
