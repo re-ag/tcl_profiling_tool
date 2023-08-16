@@ -160,6 +160,9 @@ def make_txt_result(result_dict, result_dir, result_type):
     elif result_type == 'et_orig':
         f = open(result_dir+'et_orig_list.txt','w')
 
+    elif result_type == 'net_prob':
+        f = open(result_dir+'net_prob.py', 'w')
+
     for result in result_dict:
         name = result
         data = result_dict[result]
@@ -210,7 +213,8 @@ def raw_profile(dir_name, cpu_infos):
                 if cpu_result.get(cpu) == None:
                     cpu_result[cpu] = list()
                 for msg in task_result[task]:
-                    cpu_result[cpu].append([list(msg.timing_header), msg.execution_time.start, msg.execution_time.end, msg.release_time.start, msg.release_time.end])
+                    cpu_result[cpu].append([list(msg.timing_header), msg.execution_time.start, msg.execution_time.end, msg.release_time.start, msg.release_time.end, msg.networking_time.start, msg.networking_time.end])
+                    # cpu_result[cpu].append([list(msg.timing_header), msg.execution_time.start, msg.execution_time.end, msg.release_time.start, msg.release_time.end])
         cpu_result[cpu].sort(key=lambda x:x[1])
                                                 #task 가 구동되는 cpu 단위로 실행 시작 순서에 따라 profile_data 저장
                                                 ###########################################################################
@@ -224,7 +228,9 @@ def raw_profile(dir_name, cpu_infos):
                                                 ###########################################################################
     # file = open('profile_data.txt', mode='w')
     # file.write(cpu_result)
+
     print("End read rosbag")
+
 
     return task_result, cpu_result
 
@@ -240,6 +246,7 @@ def process_execution_time_orig(profile_data): #실행시간을 한 태스크의
             task_name = data[0][0].task_name
             elapse = (data[2] - data[1]) * 1.0e-6 # msg.execution_time.end - msg.execution_time.start
             elapse_ceil = math.ceil(elapse)
+            # elapse_ceil = round(elapse)
 
             if execution_time_result.get(task_name) == None:
                 execution_time_result[task_name] = list()
@@ -272,6 +279,109 @@ def find_index(lists, value):
                 return idx
     return -1
 
+    
+    # networking_paths = {   
+    #    'STF2BPP' : ['stop_filter', 'behavior_path_planner'],
+    #    'LCP2ROF' : ['lidar_centerpoint', 'roi_detected_object_fusion']
+    # }
+
+
+def process_networking(profile_data, networking_tasks_in_sub, networking_paths, task_cpu_infos, sub_paths, task_results):
+    networking_time_result = dict()
+    diff_time_result = dict()
+    no_drop_cnt = dict()
+    print("process_networking.... start....")
+    for task, path in networking_paths.items():
+        if networking_time_result.get(task) == None:
+            networking_time_result[task] = list()
+        src_task = path[0]
+        snk_task = path[-1]
+        src_cpu = -1
+        snk_cpu = -1
+        # networking_time = snk_task.execution_start_time - src_task.execution_end_time 
+        for cpu, tasks in enumerate(task_cpu_infos):
+            if src_task in tasks:
+                src_cpu = cpu
+            if snk_task in tasks:
+                snk_cpu = cpu
+
+        for profile in profile_data[src_cpu]:
+            timing_headers = profile[0]
+            curr_name = timing_headers[0].task_name
+            if curr_name == src_task:
+                # print(curr_name)
+                # if diff_time_result.get(curr_name) == None:
+                #     diff_time_result[curr_name] = list()
+                if no_drop_cnt.get(curr_name) == None:
+                    no_drop_cnt[curr_name] = 0
+                curr_mid = -1
+                sub_idx = find_index(sub_paths, curr_name)
+                src_task_history = list()
+                for timing_info in timing_headers:
+                    for minfo in timing_info.msg_infos:
+                        sub = list(sub_paths[sub_idx])
+                        if sub[0] == list(minfo.task_history)[0] and timing_info.published:
+                            curr_mid = minfo.msg_id
+                            src_task_history = list(minfo.task_history)
+                            break
+                # start_time = profile[2] # src_task's execution_end_time
+                start_time = profile[5] # src_task's networking_start_time
+                # exe_end_time = profile[2] # src_task's execution_end_time
+                # diff_time = (exe_end_time - start_time) * 1e-6
+                # diff_ceil = math.ceil(diff_time)
+                # diff_time_result[curr_name].append(diff_ceil)
+                end_time = 0
+                for e_profile in profile_data[snk_cpu]:
+                    if e_profile[0][0].task_name == snk_task:
+                        # if diff_time_result.get(snk_task) == None:
+                        #     diff_time_result[snk_task] = list()
+                        if e_profile[1] > start_time and e_profile[1] < start_time + 50000000:
+                        # if e_profile[1] > start_time and e_profile[1] < start_time + 200000000:
+                            snk_mid_list = list()
+                            snk_pub_list = list()
+                            for header in e_profile[0]:
+                                for snk_minfo in header.msg_infos:
+                                    snk_task_history = list(snk_minfo.task_history)
+                                    if snk_task_history[0] == src_task_history[0] and header.published: # src_task 에 대한 task_history 를 가진 minfo!
+                                    # if snk_task_history[0] == src_task_history[0]: # src_task 에 대한 task_history 를 가진 minfo!
+                                        snk_mid_list.append(snk_minfo.msg_id)
+                                        snk_pub_list.append(header.published)
+                            if curr_mid in snk_mid_list:
+                                # end_time = e_profile[6]
+                                # print(curr_mid)
+                                if(networking_tasks_in_sub[task] is True):
+                                    end_time = e_profile[1] # 같은 서브그래프 내 태스크 간에서는 end_time is execution_start_time
+                                else:
+                                    end_time = e_profile[6] # 다른 서브그래프 간 태스크 간에서는 end_time is networking_end_time
+                                # end_diff = (e_profile[1] - e_profile[6]) * 1e-6
+                                # end_ceil = math.ceil(end_diff)
+                                # diff_time_result[snk_task].append(end_ceil)
+                                # end_time = e_profile[1]
+                                
+                                break
+                elapse = (end_time - start_time) * 1e-6
+                elapse_ceil = math.ceil(elapse)
+                # elapse_ceil = round(elapse)
+                if elapse_ceil > 0:
+                    networking_time_result[task].append(elapse_ceil)
+        print('---------------------------------------------------------------------')
+        if len(networking_time_result[task]) != 0:
+            print('%s : (%3d / %3d / %3d)' %((task).center(40), round(min(networking_time_result[task])), round(sum(networking_time_result[task])/len(networking_time_result[task])), round(max(networking_time_result[task]))))
+                
+    # for task, lst in diff_time_result.items():
+    #     print('%s : (%3d / %3d / %3d)'%((task + ' diff time').center(40), min(lst), round(sum(lst)/len(lst)), max(lst)))
+    #     print('---------------------------------------------------------------------')
+    print("process_networking.... end....")
+    return networking_time_result
+
+                                
+
+
+
+            
+
+
+
 def process_execution_time_task_to_task(task_cpu_infos, profile_data, sub_paths, task_results): #실행시간을 선행 태스크 시작 - 후행 태스크 시작으로 정의한 버전
     margin = 10
     execution_time_result = dict()
@@ -292,34 +402,39 @@ def process_execution_time_task_to_task(task_cpu_infos, profile_data, sub_paths,
             sub_idx = find_index(sub_paths, curr_name)
             
             
-            curr_mid_list = list()
-            curr_pub_list = list()
+            # curr_mid_list = list()
+            curr_mid = 0
             for timing_info in timing_headers:
                 for minfo in timing_info.msg_infos:
                     task_history = list(minfo.task_history)
-                    sub = list(sub_paths[sub_idx])
-                    if sub[0] == task_history[0] and timing_info.published:
+                    sub = list(sub_paths[sub_idx]) # task history about blocking topic
+                    if sub[0] == task_history[0] and timing_info.published: # blocking pipeline 에 대한 mid 추출
                     # if sub[0] == task_history[0]:
-                        curr_mid_list.append(minfo.msg_id)
-                        curr_pub_list.append(timing_info.published)
+                        # curr_mid_list.append(minfo.msg_id)
+                        curr_mid = minfo.msg_id
             # print(curr_mid_list)
             elapse = (profile[i][2] - profile[i][1]) * 1.0e-6
             elapse_ceil = math.ceil(elapse)
-            yeah = False
-            if len(curr_mid_list) != 1:
-                print("CURR_MID_LIST IS NOT ONE~~~", curr_mid_list)
-            pidx = 0
+            # elapse_ceil = round(elapse)
+            stop = False
             if sink_task_in_cpu != curr_name:
                 idx = task_cpu_infos[int(cpu)].index(curr_name)
                 next_name = task_cpu_infos[int(cpu)][idx+1]
-                # print("orig next " , next_name)
-                # for pi, p in enumerate(profile):
+                
                 sidx = 0
+                eidx = len(profile)
                 if i - margin < 0:
                     sidx = 0
                 else:
                     sidx = i - margin
-                for pi in range(sidx, len(profile)):
+
+                if i + margin >= len(profile):
+                    eidx = len(profile)
+                else:
+                    eidx = i + margin + 1
+
+                # for pi in range(sidx, len(profile)):
+                for pi in range(sidx, eidx): # 다음 태스크에 현재 mid 가 있는지 체크
                     if profile[pi][0][0].task_name == next_name:
                         # print("p[0].task_name", p[0].task_name)
                         next_sub_idx = find_index(sub_paths, next_name)
@@ -328,50 +443,56 @@ def process_execution_time_task_to_task(task_cpu_infos, profile_data, sub_paths,
                         for header in profile[pi][0]:
                             for minfo in header.msg_infos:
                                 task_history = list(minfo.task_history)
-                                nex_sub = list(sub_paths[next_sub_idx])
-                                if task_history[0] == nex_sub[0]:
+                                next_sub = list(sub_paths[next_sub_idx])
+                                if task_history[0] == next_sub[0]: # 같은 blocking history 의 mid 
                                     next_mid_list.append(minfo.msg_id)
                                     next_pub_list.append(header.published)
-                        # print(curr_mid_list, next_mid_list)
-                        for m_idx, mid in enumerate(curr_mid_list):
-                            if mid in next_mid_list and curr_pub_list[m_idx] == True:
-                                ## execution time 계산하기
-                                yeah = True
-                                elapse = (profile[pi][1] - profile[i][1] ) * 1.0e-6
-                                elapse_ceil = math.ceil(elapse)
-                                if(elapse_ceil > 100):
-                                    print(curr_name, curr_mid_list)
-                                    print(next_name, next_mid_list)
-                                # pidx = pi
+                        
+                        for n_idx, nid in enumerate(next_mid_list):
+                            if curr_mid == nid: # curr_mid 가 다음 태스크에 속함(no drop!)
                                 no_dro_cnt[curr_name] += 1
+                                stop = True # 현재 mid 에 대한 검색 종료
+
+                                ################################################################################
+                                # curr_mid 는 하나지만 next_pub_list 에는 여러 mid 가 있을 수 있음
+                                # next_pub_list 에는 큐잉된 메시지들이 들어가 있음 하지만 그 중에 published == True 인 것이 다음 태스크에 publish된 메시지
+                                # 즉 next_pub_list 에 publised = False 인 것은 next_task 에서 그 다음 태스크로 drop 된 것!
+                                # 최신 메시지에 대해서만 next task - curr task 로 실행시간 계산하고, 큐잉된 메시지는 curr task 종료-시작 으로 계산!
+                                ################################################################################
+                                if next_pub_list[n_idx] == True: # 큐잉으로 인해 버려지지 않은 메시지 아이디라면?
+                                    elapse = ( profile[pi][1] - profile[i][1] ) * 1.0e-6
+                                    elapse_ceil = math.ceil(elapse)
+                                    # elapse_ceil = round(elapse)
+                                    if elapse_ceil > 100:
+                                        print("ELAPSE IS SO BIG!!!!!!!!!!  " , elapse_ceil)
+                                        print(curr_name, " curr_mid= ", curr_mid)
+                                        print(next_name, " next_mid= ", next_mid_list)
                                 break
-                    if yeah:
+                    if stop:
                         break
                 if elapse_ceil < 0:
                     print('--------------------------------------------------------------------------------------')
                     print("ELAPSE IS NEGATIVE!!!!!!!!!!  " , elapse)
                     print(profile[i][0],profile[i][1])
                     print(profile[pi][0], profile[pi][1])
-            if elapse_ceil > 100:
-                print("ELAPSE IS SO BIG!!!!!!!!!!  " , elapse_ceil)
-                print(curr_name)
-                print(curr_mid_list)
-                print()
-            # if pidx != 0 :
-                # print(pidx, len(profile))
+            # if elapse_ceil > 100:
+            #     print("ELAPSE IS SO BIG!!!!!!!!!!  " , elapse_ceil)
+            #     print(curr_name)
+            #     print(curr_mid_list)
+            #     print()
+                
             if execution_time_result.get(curr_name) == None:
                 execution_time_result[curr_name] = list()
-            if elapse_ceil > 0:
+            if elapse_ceil >= 0:
                 execution_time_result[curr_name].append(elapse_ceil)
 
-            # else:
-                # print(curr_name, elapse_ceil)
     
     for cpu in task_cpu_infos:
         sink = cpu[-1]
         for task in cpu:
             if task != sink:
                 print("%30s drop count : %6d / %6d"%(task, len(task_results[task]) - no_dro_cnt.get(task), len(task_results[task])))        
+    print('----------------------------------------------------------------------------------------------------------------------------')
 
     # for name, cnt in no_dro_cnt.items():
     #     print("%30s : %6d / %6d"%(name, cnt, len(task_results[name])))
@@ -401,6 +522,7 @@ def process_response_time(profile_data):
             task_name = data[0][0].task_name
             elapse = (data[4] - data[3]) * 1.0e-6 # msg.response_time.end - msg.response_time.start
             elapse_ceil = math.ceil(elapse)
+            # elapse_ceil = round(elapse)
             # if(elapse_ceil >= 290):
             #     print(data[0])
             if response_time_result.get(task_name) == None:
@@ -562,17 +684,19 @@ def process_e2e_latency_using_sink(profile_data, paths):
 
     return e2e_latency_result
 
-def print_time_result(execution_time_data, response_time_data, task_cpu_infos):
+# def print_time_result(execution_time_data, response_time_data, task_cpu_infos):
+def print_time_cpu_infos(execution_time_data, task_cpu_infos, t_name, response_time_data = list()):
     for cpu in task_cpu_infos:
         for task in cpu:
             print(task)
             print('execution  time: (%3d / %3d / %3d)'%(min(execution_time_data[task]), round(sum(execution_time_data[task])/len(execution_time_data[task])), max(execution_time_data[task])))
-            print('response   time: (%3d / %3d / %3d)'%(min(response_time_data[task]), round(sum(response_time_data[task])/len(response_time_data[task])), max(response_time_data[task])))
+            if t_name == 'response':
+                print('%s  time: (%3d / %3d / %3d)'%(t_name, min(response_time_data[task]), round(sum(response_time_data[task])/len(response_time_data[task])), max(response_time_data[task])))
             print('---------------------------------------------------------------------')
             
-def print_latency(e2e_latency):
+def print_time(e2e_latency, name):
     for key, value in e2e_latency.items():
-        print('%s : (%3d / %3d / %3d)' %((key+' e2e latency').center(40), round(min(value)), round(sum(value)/len(value)), round(max(value))))
+        print('%s : (%3d / %3d / %3d)' %((key+' ' + name).center(40), round(min(value)), round(sum(value)/len(value)), round(max(value))))
         print('---------------------------------------------------------------------')
 
 def cpu_utilization(task_cpu_infos, execution_time_data):
@@ -600,20 +724,8 @@ def main(args):
     input_dir = args.input
     output_dir = args.output
     orig = args.orig
+    net = args.net
     # 태스크 - 코어 할당 정보
-
-
-    # cpu0 = ['virtual_rear_lidar_driver', 'concatenate_filter', 'crop_box_filter', 'lidar_centerpoint']
-    # # cpu1 = ['lidar_centerpoint']
-    # cpu1 = ['virtual_front_lidar_driver', 'voxel_grid_downsample_filter', 'ndt_scan_matcher']
-    # cpu2 = ['virtual_camera_driver', 'image_transport_decompressor'] 
-    # cpu3 = ['tensorrt_yolo', 'roi_detected_object_fusion','multi_object_tracker', 'map_based_prediction']
-    # cpu4 = ['virtual_can_driver','vehicle_velocity_converter']
-    # cpu5 = ['ekf_localizer_ndt', 'stop_filter']
-    # cpu6= ['behavior_path_planner','behavior_velocity_planner']
-    # cpu7 = ['obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother']
-
-    # task_cpu_infos = [cpu0, cpu1, cpu2, cpu3, cpu4, cpu5, cpu6, cpu7]
     cpu0 = ['virtual_rear_lidar_driver', 'concatenate_filter', 'crop_box_filter']
     cpu1 = ['lidar_centerpoint']
     cpu2 = ['virtual_front_lidar_driver', 'voxel_grid_downsample_filter', 'ndt_scan_matcher']
@@ -629,7 +741,6 @@ def main(args):
     cpu12 = ['motion_velocity_smoother']
 
     task_cpu_infos = [cpu0, cpu1, cpu2, cpu3, cpu4, cpu5, cpu6, cpu7, cpu8, cpu9, cpu10, cpu11, cpu12]
-    #task_cpu_infos = [cpu0, cpu1, cpu2, cpu3, cpu4, cpu5, cpu6, cpu7]
 
     execution_time_data = None
     response_time_data = None
@@ -641,8 +752,8 @@ def main(args):
         ['virtual_front_lidar_driver', 'voxel_grid_downsample_filter', 'ndt_scan_matcher'],
         ['virtual_can_driver', 'vehicle_velocity_converter', 'ekf_localizer_ndt', 'stop_filter'],
         ['behavior_path_planner', 'behavior_velocity_planner', 'obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother']
-        
     ]
+
     # e2e latency 를 얻고자하는 관심 경로 (경로 상의 모든 태스크 입력)
     e2e_paths = {
         'CAM_DET' : ['virtual_camera_driver', 'image_transport_decompressor', 'tensorrt_yolo', 'roi_detected_object_fusion', 'multi_object_tracker', 'map_based_prediction', 'behavior_path_planner', 'behavior_velocity_planner', 'obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother'],
@@ -657,40 +768,105 @@ def main(args):
         'SUB_ODM_LOC' : ['virtual_can_driver', 'vehicle_velocity_converter', 'ekf_localizer_ndt', 'stop_filter'],
         'SUB_PLANNING': ['behavior_path_planner', 'behavior_velocity_planner', 'obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother']
     }
-    planning_paths = {   
-        'SUB_PLANNING': ['behavior_path_planner', 'behavior_velocity_planner', 'obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother']
+
+    networking_tasks_in_sub = {
+        'FLD2VGF' : True,
+        'VGF2NDT' : True, 
+        'NDT2EKF' : False,
+        'RLD2CCF' : True,
+        'CCF2CBF' : True,
+        'CBF2LCP' : True,
+        'LCP2ROF' : False,
+        'CAM2DCP' : True,
+        'DCP2TRY' : True,
+        'TRY2ROF' : True,
+        'ROF2MOT' : True,
+        'MOT2MBP' : True,
+        'ODM2VVC' : True,
+        'VVC2EKF' : True,
+        'EKF2STF' : True,
+        'STF2BPP' : False,
+        'BPP2BVP' : True,
+        'BVP2OAP' : True,
+        'OAP2OCP' : True,
+        'OCP2MVS' : True,
     }
-    task_results, profile_data = raw_profile(input_dir, task_cpu_infos) #rosbag 을 읽고, cpu 단위로 task 들의 profile data 저장
-    # return
-    if(orig):
-        execution_time_data = process_execution_time_orig(profile_data) #profile_data 를 사용하여 task 들의 execution_time 분포 획득
-                                                                    #실행시간을 한 태스크의 시작 - 종료로 정의한 오리지널 버전
-    else:
-        execution_time_data = process_execution_time_task_to_task(task_cpu_infos, profile_data, sub_paths, task_results) #profile_data 를 사용하여 task 들의 execution_time 분포 획득
-                                                                            # 실행시간을 선행 태스크의 시작 - 후행 태스크의 시작으로 정의한 버전
-    # cpu_utilization(task_cpu_infos, execution_time_data)
-    # return
-    response_time_data  = process_response_time(profile_data) #profile_data 를 사용하여 task 들의 response_time 분포 획득
-    print_time_result(execution_time_data, response_time_data, task_cpu_infos)
+    networking_paths = {   
+        'FLD2VGF' : ['virtual_front_lidar_driver', '/tcl/front/points_raw', 'voxel_grid_downsample_filter'],
+        'VGF2NDT' : ['voxel_grid_downsample_filter', '/tcl/voxel_grid_downsample/pointcloud', 'ndt_scan_matcher'],
+
+        'NDT2EKF' : ['ndt_scan_matcher', '/tcl/localization/pose_estimator/pose_with_covariance', 'ekf_localizer_ndt'],
+
+        'RLD2CCF' : ['virtual_rear_lidar_driver', '/tcl/rear/points_raw', 'concatenate_filter'],
+        'CCF2CBF' : ['concatenate_filter', '/tcl/merged_cloud', 'crop_box_filter'],
+        'CBF2LCP' : ['crop_box_filter', 'tcl/range_cropped_pointcloud', 'lidar_centerpoint'],
+
+        'LCP2ROF' : ['lidar_centerpoint', 'roi_detected_object_fusion'],
+
+        'CAM2DCP' : ['virtual_camera_driver', '/tcl/compressed_image', 'image_transport_decompressor'],
+        'DCP2TRY' : ['image_transport_decompressor', '/tcl/image_raw', 'tensorrt_yolo'],
+        'TRY2ROF' : ['tensorrt_yolo', '/tcl/camera/detected_objects', 'roi_detected_object_fusion'],
+        'ROF2MOT' : ['roi_detected_object_fusion', '/tcl/fused_objects', 'multi_object_tracker'],
+        'MOT2MBP' : ['multi_object_tracker', '/tcl/perception/object_recognition/tracking/objects', 'map_based_prediction'],
+
+        'ODM2VVC' : ['virtual_can_driver', '/tcl/velocity_status', 'vehicle_velocity_converter'],
+        'VVC2EKF' : ['vehicle_velocity_converter', '/tcl/localization/twist_estimator/vehicle_velocity_converter/twist_with_covariance', 'ekf_localizer_ndt'],
+        'EKF2STF' : ['ekf_localizer_ndt', '/tcl/localization/pose_twist_fusion_filter/kinematic_state', 'stop_filter'],
+
+        'STF2BPP' : ['stop_filter', '/tcl/localization/kinematic_state', 'behavior_path_planner'],
+
+        'BPP2BVP' : ['behavior_path_planner', '/tcl/path_with_lane_id', 'behavior_velocity_planner'],
+        'BVP2OAP' : ['behavior_velocity_planner', '/tcl/planning/scenario_planning/lane_driving/behavior_planning/path', 'obstacle_avoidance_planner'],
+        'OAP2OCP' : ['obstacle_avoidance_planner', '/tcl/planning/scenario_planning/trajectory', 'obstacle_cruise_planner'],
+        'OCP2MVS' : ['obstacle_cruise_planner', '/tcl/planning/scenario_planning/lane_driving/trajectory', 'motion_velocity_smoother']
+    }
+
+    ################### READ ROSBAG ############################
+    task_results, profile_data = raw_profile(input_dir, task_cpu_infos) # rosbag 을 읽고, cpu 단위로 task 들의 profile data 저장
     
+    if(orig):
+        if(net == False):    
+            execution_time_data = process_execution_time_orig(profile_data) # profile_data 를 사용하여 task 들의 execution_time 분포 획득
+                                                                            # 실행시간을 한 태스크의 시작 - 종료로 정의한 오리지널 버전
+            print_time_cpu_infos(execution_time_data, task_cpu_infos, 'execution')
+        
+    else:
+        if(net == False):
+            execution_time_data = process_execution_time_task_to_task(task_cpu_infos, profile_data, sub_paths, task_results)    # profile_data 를 사용하여 task 들의 execution_time 분포 획득
+                                                                                                                                # 실행시간을 선행 태스크의 시작 - 후행 태스크의 시작으로 정의한 버전
+            print_time_cpu_infos(execution_time_data, task_cpu_infos, 'execution')
+
+    if(net == False):
+        response_time_data  = process_response_time(profile_data) # profile_data 를 사용하여 task 들의 response_time 분포 획득
+        print_time_cpu_infos(execution_time_data, task_cpu_infos, 'response', response_time_data)
+    else:
+        networking_time_result = process_networking(profile_data, networking_tasks_in_sub, networking_paths, task_cpu_infos, sub_paths, task_results)
+        print_time(networking_time_result, 'net latency')
+    return
 
     e2e_latency_data    = process_e2e_latency_using_sink(profile_data, e2e_paths) #profile_data 를 사용하여 e2e_path 의 e2e_latency 분포 획득
-    print_latency(e2e_latency_data)
+    print_time(e2e_latency_data, 'e2e latency')
 
+    ################### MAKE HIST & PROB ############################
+    execution_time_prob = make_hist(execution_time_data, 'prob') #각 task 의 execution time 확률 분포 획득
+    e2e_latency_prob = make_hist(e2e_latency_data, 'prob') #각 관심 경로의 e2e latency 확률 분포 획득
 
-    # execution_time_prob = make_hist(execution_time_data, 'prob') #각 task 의 execution time 확률 분포 획득
-    # e2e_latency_prob = make_hist(e2e_latency_data, 'prob') #각 관심 경로의 e2e latency 확률 분포 획득
-    # response_time_prob = make_hist(response_time_data, 'prob') #각 task 의 response time 확률 분포 획득
-
-    # make_txt_result(response_time_prob, output_dir, 'rt_prob') #response time 확률 분포를 txt 파일로 저장
-    # make_txt_result(execution_time_prob, output_dir, 'et_prob') #execution time 확률 분포를 txt 파일로 저장    
-    # make_txt_result(e2e_latency_prob, output_dir, 'e2e_prob') #e2e latency 확률 분포를 txt 파일로 저장
+    if(net == False):
+        response_time_prob = make_hist(response_time_data, 'prob') #각 task 의 response time 확률 분포 획득
+        make_txt_result(response_time_prob, output_dir, 'rt_prob') #response time 확률 분포를 txt 파일로 저장
+    else:
+        network_time_prob = make_hist(networking_time_result, 'prob')
+        make_txt_result(network_time_prob, output_dir, 'net_prob')
+    
+    make_txt_result(execution_time_prob, output_dir, 'et_prob') #execution time 확률 분포를 txt 파일로 저장    
+    make_txt_result(e2e_latency_prob, output_dir, 'e2e_prob') #e2e latency 확률 분포를 txt 파일로 저장
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input', help='input profiled directory name', required=True)
     parser.add_argument('-o', '--output', help='output result directory name', required=True)
     parser.add_argument('-orig', '--orig', action='store_true')
+    parser.add_argument('-n', '--net', action='store_true')
 
     args = parser.parse_args()
 
