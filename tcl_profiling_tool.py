@@ -724,7 +724,6 @@ def main(args):
     input_dir = args.input
     output_dir = args.output
     orig = args.orig
-    net = args.net
     # 태스크 - 코어 할당 정보
     cpu0 = ['virtual_rear_lidar_driver', 'concatenate_filter', 'crop_box_filter']
     cpu1 = ['lidar_centerpoint']
@@ -769,80 +768,17 @@ def main(args):
         'SUB_PLANNING': ['behavior_path_planner', 'behavior_velocity_planner', 'obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother']
     }
 
-    networking_tasks_in_sub = {
-        'FLD2VGF' : True,
-        'VGF2NDT' : True, 
-        'NDT2EKF' : False,
-        'RLD2CCF' : True,
-        'CCF2CBF' : True,
-        'CBF2LCP' : True,
-        'LCP2ROF' : False,
-        'CAM2DCP' : True,
-        'DCP2TRY' : True,
-        'TRY2ROF' : True,
-        'ROF2MOT' : True,
-        'MOT2MBP' : True,
-        'ODM2VVC' : True,
-        'VVC2EKF' : True,
-        'EKF2STF' : True,
-        'STF2BPP' : False,
-        'BPP2BVP' : True,
-        'BVP2OAP' : True,
-        'OAP2OCP' : True,
-        'OCP2MVS' : True,
-    }
-    networking_paths = {   
-        'FLD2VGF' : ['virtual_front_lidar_driver', '/tcl/front/points_raw', 'voxel_grid_downsample_filter'],
-        'VGF2NDT' : ['voxel_grid_downsample_filter', '/tcl/voxel_grid_downsample/pointcloud', 'ndt_scan_matcher'],
-
-        'NDT2EKF' : ['ndt_scan_matcher', '/tcl/localization/pose_estimator/pose_with_covariance', 'ekf_localizer_ndt'],
-
-        'RLD2CCF' : ['virtual_rear_lidar_driver', '/tcl/rear/points_raw', 'concatenate_filter'],
-        'CCF2CBF' : ['concatenate_filter', '/tcl/merged_cloud', 'crop_box_filter'],
-        'CBF2LCP' : ['crop_box_filter', 'tcl/range_cropped_pointcloud', 'lidar_centerpoint'],
-
-        'LCP2ROF' : ['lidar_centerpoint', 'roi_detected_object_fusion'],
-
-        'CAM2DCP' : ['virtual_camera_driver', '/tcl/compressed_image', 'image_transport_decompressor'],
-        'DCP2TRY' : ['image_transport_decompressor', '/tcl/image_raw', 'tensorrt_yolo'],
-        'TRY2ROF' : ['tensorrt_yolo', '/tcl/camera/detected_objects', 'roi_detected_object_fusion'],
-        'ROF2MOT' : ['roi_detected_object_fusion', '/tcl/fused_objects', 'multi_object_tracker'],
-        'MOT2MBP' : ['multi_object_tracker', '/tcl/perception/object_recognition/tracking/objects', 'map_based_prediction'],
-
-        'ODM2VVC' : ['virtual_can_driver', '/tcl/velocity_status', 'vehicle_velocity_converter'],
-        'VVC2EKF' : ['vehicle_velocity_converter', '/tcl/localization/twist_estimator/vehicle_velocity_converter/twist_with_covariance', 'ekf_localizer_ndt'],
-        'EKF2STF' : ['ekf_localizer_ndt', '/tcl/localization/pose_twist_fusion_filter/kinematic_state', 'stop_filter'],
-
-        'STF2BPP' : ['stop_filter', '/tcl/localization/kinematic_state', 'behavior_path_planner'],
-
-        'BPP2BVP' : ['behavior_path_planner', '/tcl/path_with_lane_id', 'behavior_velocity_planner'],
-        'BVP2OAP' : ['behavior_velocity_planner', '/tcl/planning/scenario_planning/lane_driving/behavior_planning/path', 'obstacle_avoidance_planner'],
-        'OAP2OCP' : ['obstacle_avoidance_planner', '/tcl/planning/scenario_planning/trajectory', 'obstacle_cruise_planner'],
-        'OCP2MVS' : ['obstacle_cruise_planner', '/tcl/planning/scenario_planning/lane_driving/trajectory', 'motion_velocity_smoother']
-    }
-
     ################### READ ROSBAG ############################
     task_results, profile_data = raw_profile(input_dir, task_cpu_infos) # rosbag 을 읽고, cpu 단위로 task 들의 profile data 저장
     
     if(orig):
-        if(net == False):    
             execution_time_data = process_execution_time_orig(profile_data) # profile_data 를 사용하여 task 들의 execution_time 분포 획득
-                                                                            # 실행시간을 한 태스크의 시작 - 종료로 정의한 오리지널 버전
-            print_time_cpu_infos(execution_time_data, task_cpu_infos, 'execution')
-        
+                                                                            # 실행시간을 한 태스크의 시작 - 종료로 정의한 오리지널 버전        
     else:
-        if(net == False):
             execution_time_data = process_execution_time_task_to_task(task_cpu_infos, profile_data, sub_paths, task_results)    # profile_data 를 사용하여 task 들의 execution_time 분포 획득
                                                                                                                                 # 실행시간을 선행 태스크의 시작 - 후행 태스크의 시작으로 정의한 버전
-            print_time_cpu_infos(execution_time_data, task_cpu_infos, 'execution')
-
-    if(net == False):
-        response_time_data  = process_response_time(profile_data) # profile_data 를 사용하여 task 들의 response_time 분포 획득
-        print_time_cpu_infos(execution_time_data, task_cpu_infos, 'response', response_time_data)
-    else:
-        networking_time_result = process_networking(profile_data, networking_tasks_in_sub, networking_paths, task_cpu_infos, sub_paths, task_results)
-        print_time(networking_time_result, 'net latency')
-    return
+    response_time_data = process_response_time(profile_data)
+    print_time_cpu_infos(execution_time_data, task_cpu_infos, 'response', response_time_data)
 
     e2e_latency_data    = process_e2e_latency_using_sink(profile_data, e2e_paths) #profile_data 를 사용하여 e2e_path 의 e2e_latency 분포 획득
     print_time(e2e_latency_data, 'e2e latency')
@@ -850,14 +786,9 @@ def main(args):
     ################### MAKE HIST & PROB ############################
     execution_time_prob = make_hist(execution_time_data, 'prob') #각 task 의 execution time 확률 분포 획득
     e2e_latency_prob = make_hist(e2e_latency_data, 'prob') #각 관심 경로의 e2e latency 확률 분포 획득
+    response_time_prob = make_hist(response_time_data, 'prob') #각 task 의 response time 확률 분포 획득
 
-    if(net == False):
-        response_time_prob = make_hist(response_time_data, 'prob') #각 task 의 response time 확률 분포 획득
-        make_txt_result(response_time_prob, output_dir, 'rt_prob') #response time 확률 분포를 txt 파일로 저장
-    else:
-        network_time_prob = make_hist(networking_time_result, 'prob')
-        make_txt_result(network_time_prob, output_dir, 'net_prob')
-    
+    make_txt_result(response_time_prob, output_dir, 'rt_prob') #response time 확률 분포를 txt 파일로 저장
     make_txt_result(execution_time_prob, output_dir, 'et_prob') #execution time 확률 분포를 txt 파일로 저장    
     make_txt_result(e2e_latency_prob, output_dir, 'e2e_prob') #e2e latency 확률 분포를 txt 파일로 저장
 
@@ -866,7 +797,6 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--input', help='input profiled directory name', required=True)
     parser.add_argument('-o', '--output', help='output result directory name', required=True)
     parser.add_argument('-orig', '--orig', action='store_true')
-    parser.add_argument('-n', '--net', action='store_true')
 
     args = parser.parse_args()
 
