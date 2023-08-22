@@ -213,7 +213,8 @@ def raw_profile(dir_name, cpu_infos):
                 if cpu_result.get(cpu) == None:
                     cpu_result[cpu] = list()
                 for msg in task_result[task]:
-                    cpu_result[cpu].append([list(msg.timing_header), msg.execution_time.start, msg.execution_time.end, msg.release_time.start, msg.release_time.end, msg.networking_time.start, msg.networking_time.end])
+                    cpu_result[cpu].append([list(msg.timing_header), msg.execution_time.start, msg.execution_time.end, msg.release_time.start, msg.release_time.end, list(msg.communication_times)])
+                    # cpu_result[cpu].append([list(msg.timing_header), msg.execution_time.start, msg.execution_time.end, msg.release_time.start, msg.release_time.end, msg.networking_time.start, msg.networking_time.end])
                     # cpu_result[cpu].append([list(msg.timing_header), msg.execution_time.start, msg.execution_time.end, msg.release_time.start, msg.release_time.end])
         cpu_result[cpu].sort(key=lambda x:x[1])
                                                 #task 가 구동되는 cpu 단위로 실행 시작 순서에 따라 profile_data 저장
@@ -279,22 +280,15 @@ def find_index(lists, value):
                 return idx
     return -1
 
-    
-    # networking_paths = {   
-    #    'STF2BPP' : ['stop_filter', 'behavior_path_planner'],
-    #    'LCP2ROF' : ['lidar_centerpoint', 'roi_detected_object_fusion']
-    # }
-
-
-def process_networking(profile_data, networking_tasks_in_sub, networking_paths, task_cpu_infos, sub_paths, task_results):
+def process_networking(profile_data, networking_paths, task_cpu_infos, sub_paths):
     networking_time_result = dict()
     diff_time_result = dict()
     no_drop_cnt = dict()
-    print("process_networking.... start....")
     for task, path in networking_paths.items():
         if networking_time_result.get(task) == None:
             networking_time_result[task] = list()
         src_task = path[0]
+        topic_nm = path[1]
         snk_task = path[-1]
         src_cpu = -1
         snk_cpu = -1
@@ -324,8 +318,9 @@ def process_networking(profile_data, networking_tasks_in_sub, networking_paths, 
                             curr_mid = minfo.msg_id
                             src_task_history = list(minfo.task_history)
                             break
-                # start_time = profile[2] # src_task's execution_end_time
-                start_time = profile[5] # src_task's networking_start_time
+                if len(src_task_history) == 0:
+                    continue
+                start_time = profile[2] # src_task's execution_end_time
                 # exe_end_time = profile[2] # src_task's execution_end_time
                 # diff_time = (exe_end_time - start_time) * 1e-6
                 # diff_ceil = math.ceil(diff_time)
@@ -335,24 +330,26 @@ def process_networking(profile_data, networking_tasks_in_sub, networking_paths, 
                     if e_profile[0][0].task_name == snk_task:
                         # if diff_time_result.get(snk_task) == None:
                         #     diff_time_result[snk_task] = list()
-                        if e_profile[1] > start_time and e_profile[1] < start_time + 50000000:
-                        # if e_profile[1] > start_time and e_profile[1] < start_time + 200000000:
+                        if e_profile[1] > start_time and e_profile[1] < start_time + 100000000:
                             snk_mid_list = list()
                             snk_pub_list = list()
                             for header in e_profile[0]:
                                 for snk_minfo in header.msg_infos:
                                     snk_task_history = list(snk_minfo.task_history)
-                                    if snk_task_history[0] == src_task_history[0] and header.published: # src_task 에 대한 task_history 를 가진 minfo!
-                                    # if snk_task_history[0] == src_task_history[0]: # src_task 에 대한 task_history 를 가진 minfo!
+                                    if len(src_task_history) == 0:
+                                        print(profile)
+                                        print()
+                                    # if snk_task_history[0] == src_task_history[0] and header.published: # src_task 에 대한 task_history 를 가진 minfo!
+                                    if snk_task_history[0] == src_task_history[0]: # src_task 에 대한 task_history 를 가진 minfo!
                                         snk_mid_list.append(snk_minfo.msg_id)
                                         snk_pub_list.append(header.published)
                             if curr_mid in snk_mid_list:
+                                for comm_time in e_profile[-1]:
+                                    if(comm_time.topic_name == topic_nm):
+                                        end_time = comm_time.communication_end_time
+
                                 # end_time = e_profile[6]
                                 # print(curr_mid)
-                                if(networking_tasks_in_sub[task] is True):
-                                    end_time = e_profile[1] # 같은 서브그래프 내 태스크 간에서는 end_time is execution_start_time
-                                else:
-                                    end_time = e_profile[6] # 다른 서브그래프 간 태스크 간에서는 end_time is networking_end_time
                                 # end_diff = (e_profile[1] - e_profile[6]) * 1e-6
                                 # end_ceil = math.ceil(end_diff)
                                 # diff_time_result[snk_task].append(end_ceil)
@@ -368,10 +365,6 @@ def process_networking(profile_data, networking_tasks_in_sub, networking_paths, 
         if len(networking_time_result[task]) != 0:
             print('%s : (%3d / %3d / %3d)' %((task).center(40), round(min(networking_time_result[task])), round(sum(networking_time_result[task])/len(networking_time_result[task])), round(max(networking_time_result[task]))))
                 
-    # for task, lst in diff_time_result.items():
-    #     print('%s : (%3d / %3d / %3d)'%((task + ' diff time').center(40), min(lst), round(sum(lst)/len(lst)), max(lst)))
-    #     print('---------------------------------------------------------------------')
-    print("process_networking.... end....")
     return networking_time_result
 
                                 
@@ -689,7 +682,7 @@ def print_time_cpu_infos(execution_time_data, task_cpu_infos, t_name, response_t
     for cpu in task_cpu_infos:
         for task in cpu:
             print(task)
-            print('execution  time: (%3d / %3d / %3d)'%(min(execution_time_data[task]), round(sum(execution_time_data[task])/len(execution_time_data[task])), max(execution_time_data[task])))
+            print('execution time: (%3d / %3d / %3d)'%(min(execution_time_data[task]), round(sum(execution_time_data[task])/len(execution_time_data[task])), max(execution_time_data[task])))
             if t_name == 'response':
                 print('%s  time: (%3d / %3d / %3d)'%(t_name, min(response_time_data[task]), round(sum(response_time_data[task])/len(response_time_data[task])), max(response_time_data[task])))
             print('---------------------------------------------------------------------')
@@ -736,11 +729,12 @@ def main(args):
     cpu7 = ['ekf_localizer_ndt', 'stop_filter']
     cpu8 = ['behavior_path_planner']
     cpu9 = ['behavior_velocity_planner']
-    cpu10 = ['obstacle_avoidance_planner']
+    cpu10 = ['obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother']
     cpu11 = ['obstacle_cruise_planner']
     cpu12 = ['motion_velocity_smoother']
 
     task_cpu_infos = [cpu0, cpu1, cpu2, cpu3, cpu4, cpu5, cpu6, cpu7, cpu8, cpu9, cpu10, cpu11, cpu12]
+    # task_cpu_infos = [cpu0, cpu1, cpu2, cpu3, cpu4, cpu5, cpu6, cpu7, cpu8, cpu9, cpu10]
 
     execution_time_data = None
     response_time_data = None
@@ -768,29 +762,6 @@ def main(args):
         'SUB_ODM_LOC' : ['virtual_can_driver', 'vehicle_velocity_converter', 'ekf_localizer_ndt', 'stop_filter'],
         'SUB_PLANNING': ['behavior_path_planner', 'behavior_velocity_planner', 'obstacle_avoidance_planner', 'obstacle_cruise_planner', 'motion_velocity_smoother']
     }
-
-    networking_tasks_in_sub = {
-        'FLD2VGF' : True,
-        'VGF2NDT' : True, 
-        'NDT2EKF' : False,
-        'RLD2CCF' : True,
-        'CCF2CBF' : True,
-        'CBF2LCP' : True,
-        'LCP2ROF' : False,
-        'CAM2DCP' : True,
-        'DCP2TRY' : True,
-        'TRY2ROF' : True,
-        'ROF2MOT' : True,
-        'MOT2MBP' : True,
-        'ODM2VVC' : True,
-        'VVC2EKF' : True,
-        'EKF2STF' : True,
-        'STF2BPP' : False,
-        'BPP2BVP' : True,
-        'BVP2OAP' : True,
-        'OAP2OCP' : True,
-        'OCP2MVS' : True,
-    }
     networking_paths = {   
         'FLD2VGF' : ['virtual_front_lidar_driver', '/tcl/front/points_raw', 'voxel_grid_downsample_filter'],
         'VGF2NDT' : ['voxel_grid_downsample_filter', '/tcl/voxel_grid_downsample/pointcloud', 'ndt_scan_matcher'],
@@ -799,15 +770,17 @@ def main(args):
 
         'RLD2CCF' : ['virtual_rear_lidar_driver', '/tcl/rear/points_raw', 'concatenate_filter'],
         'CCF2CBF' : ['concatenate_filter', '/tcl/merged_cloud', 'crop_box_filter'],
-        'CBF2LCP' : ['crop_box_filter', 'tcl/range_cropped_pointcloud', 'lidar_centerpoint'],
+        'CBF2LCP' : ['crop_box_filter', '/tcl/range_cropped_pointcloud', 'lidar_centerpoint'],
 
-        'LCP2ROF' : ['lidar_centerpoint', 'roi_detected_object_fusion'],
+        'LCP2ROF' : ['lidar_centerpoint', '/tcl/detected_objects', 'roi_detected_object_fusion'],
 
         'CAM2DCP' : ['virtual_camera_driver', '/tcl/compressed_image', 'image_transport_decompressor'],
         'DCP2TRY' : ['image_transport_decompressor', '/tcl/image_raw', 'tensorrt_yolo'],
         'TRY2ROF' : ['tensorrt_yolo', '/tcl/camera/detected_objects', 'roi_detected_object_fusion'],
         'ROF2MOT' : ['roi_detected_object_fusion', '/tcl/fused_objects', 'multi_object_tracker'],
         'MOT2MBP' : ['multi_object_tracker', '/tcl/perception/object_recognition/tracking/objects', 'map_based_prediction'],
+
+        'MBP2BPP' : ['map_based_prediction', '/tcl/perception/object_recognition/objects', 'behavior_path_planner'],
 
         'ODM2VVC' : ['virtual_can_driver', '/tcl/velocity_status', 'vehicle_velocity_converter'],
         'VVC2EKF' : ['vehicle_velocity_converter', '/tcl/localization/twist_estimator/vehicle_velocity_converter/twist_with_covariance', 'ekf_localizer_ndt'],
@@ -828,20 +801,20 @@ def main(args):
         if(net == False):    
             execution_time_data = process_execution_time_orig(profile_data) # profile_data 를 사용하여 task 들의 execution_time 분포 획득
                                                                             # 실행시간을 한 태스크의 시작 - 종료로 정의한 오리지널 버전
-            print_time_cpu_infos(execution_time_data, task_cpu_infos, 'execution')
+            # print_time_cpu_infos(execution_time_data, task_cpu_infos, 'execution')
         
     else:
         if(net == False):
             execution_time_data = process_execution_time_task_to_task(task_cpu_infos, profile_data, sub_paths, task_results)    # profile_data 를 사용하여 task 들의 execution_time 분포 획득
                                                                                                                                 # 실행시간을 선행 태스크의 시작 - 후행 태스크의 시작으로 정의한 버전
-            print_time_cpu_infos(execution_time_data, task_cpu_infos, 'execution')
+            # print_time_cpu_infos(execution_time_data, task_cpu_infos, 'execution')
 
     if(net == False):
         response_time_data  = process_response_time(profile_data) # profile_data 를 사용하여 task 들의 response_time 분포 획득
         print_time_cpu_infos(execution_time_data, task_cpu_infos, 'response', response_time_data)
     else:
-        networking_time_result = process_networking(profile_data, networking_tasks_in_sub, networking_paths, task_cpu_infos, sub_paths, task_results)
-        print_time(networking_time_result, 'net latency')
+        networking_time_result = process_networking(profile_data, networking_paths, task_cpu_infos, sub_paths)
+        # print_time(networking_time_result, 'net latency')
     return
 
     e2e_latency_data    = process_e2e_latency_using_sink(profile_data, e2e_paths) #profile_data 를 사용하여 e2e_path 의 e2e_latency 분포 획득
@@ -854,11 +827,11 @@ def main(args):
     if(net == False):
         response_time_prob = make_hist(response_time_data, 'prob') #각 task 의 response time 확률 분포 획득
         make_txt_result(response_time_prob, output_dir, 'rt_prob') #response time 확률 분포를 txt 파일로 저장
+        make_txt_result(execution_time_prob, output_dir, 'et_prob') #execution time 확률 분포를 txt 파일로 저장    
     else:
         network_time_prob = make_hist(networking_time_result, 'prob')
         make_txt_result(network_time_prob, output_dir, 'net_prob')
     
-    make_txt_result(execution_time_prob, output_dir, 'et_prob') #execution time 확률 분포를 txt 파일로 저장    
     make_txt_result(e2e_latency_prob, output_dir, 'e2e_prob') #e2e latency 확률 분포를 txt 파일로 저장
 
 if __name__ == "__main__":
